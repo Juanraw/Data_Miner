@@ -26,10 +26,31 @@ add_library(core STATIC
 target_include_directories(core PUBLIC src)
 target_link_libraries(core PUBLIC PkgConfig::MATIO)
 
+# Importador .set/.fdt (Fase 2, ADR-002): depende de core y de libmatio para
+# parsear el struct EEG, pero de nada de red/UI.
+add_library(importers STATIC
+    src/importers/SetImporter.cpp
+)
+target_include_directories(importers PUBLIC src)
+target_link_libraries(importers PUBLIC core PkgConfig::MATIO)
+
 add_executable(backend src/main.cpp)
 target_link_libraries(backend ${Boost_LIBRARIES} core)
 
 enable_testing()
+
 add_executable(core_smoke_test tests/core_smoke_test.cpp)
 target_link_libraries(core_smoke_test core)
 add_test(NAME core_smoke_test COMMAND core_smoke_test)
+
+# Round-trip sintetico (sin datos externos): valida la ruta EEG.data -> .fdt
+# externo, que ningun dataset real disponible en esta sesion ejercita.
+add_executable(set_importer_fdt_roundtrip_test tests/set_importer_fdt_roundtrip_test.cpp)
+target_link_libraries(set_importer_fdt_roundtrip_test importers)
+add_test(NAME set_importer_fdt_roundtrip_test COMMAND set_importer_fdt_roundtrip_test)
+
+# Herramienta manual de verificacion contra datos reales (ver el propio
+# archivo): no se registra con add_test porque requiere un dataset montado
+# en runtime, no disponible durante el build de la imagen.
+add_executable(set_importer_real_test tests/set_importer_real_test.cpp)
+target_link_libraries(set_importer_real_test importers)

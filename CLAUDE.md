@@ -41,18 +41,26 @@ proveniencia van a `data/processed/` y `data/logs/`.
 
 ## Formato .set — soporte obligatorio, no opcional
 `.set` puede ser autocontenido o referenciar un `.fdt` externo con los datos reales
-(el campo `EEG.data` es numérico en el primer caso, texto en el segundo). El
+(el campo `data` es numérico en el primer caso, texto en el segundo). El
 importador debe manejar ambos casos explícitamente — ver `docs/adr/002-*.md`.
 
+**Importante:** EEGLAB guarda `.set` con `save(..., '-struct', 'EEG')`, que APLANA
+el struct EEG en variables de nivel superior individuales (`nbchan`, `srate`,
+`data`, `chanlocs`, `event`, ...) — no hay una variable struct `EEG` anidada.
+Confirmado empíricamente contra datos reales; ver addendum en
+`docs/adr/002-fdt-companion-files.md`.
+
 ## Estado (2026-08-14)
-Fase -1/0 completada: estructura de carpetas, ADRs, flags de build, build de
-verificación en Docker confirmada (contenedor arranca y responde en :8090).
-Fase 1 completada: `core/SignalBuffer` y `core/SignalData` (representación interna,
-ADR-003) implementados y probados; libmatio enlazada y verificada (ADR-001) vía
-`backend/tests/core_smoke_test.cpp`, que corre dentro del build de Docker y lo
-detiene si falla. `backend/src/main.cpp` sigue siendo el demo de eco HTTP/WS
-original, a reemplazar — no la base del `api/` final (ver `docs/architecture.md`).
-Próximo paso: Fase 2, importador de `.set`/`.fdt` sobre `core/`.
+Fase -1/0 y Fase 1 completadas (ver commits previos). Fase 2 completada:
+`backend/src/importers/SetImporter.{hpp,cpp}` importa `.set` reales a `SignalData`
+— srate, canales (chanlocs), eventos (type/latency/duration + campos extra),
+continuo/epocado, y ambas rutas de `data` (inline y `.fdt` externo). Validado
+contra 2 sujetos reales de OpenNeuro ds004504 (19 canales, 500 Hz, ~10 min cada
+uno) y con un round-trip sintético para la ruta `.fdt` que ningún sujeto de ese
+dataset ejercita (todos autocontenidos). `backend/src/main.cpp` sigue siendo el
+demo de eco HTTP/WS original, a reemplazar — no la base del `api/` final (ver
+`docs/architecture.md`). Próximo paso: Fase 3, processing engine headless
+(desacoplado del transporte, ver ADR-004) + primer algoritmo real (filtros).
 
 ## Qué NO hacer sin decisión explícita
 - No añadir dependencias de terceros que resuelvan directamente algoritmos
