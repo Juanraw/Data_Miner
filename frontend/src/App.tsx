@@ -24,9 +24,8 @@ import './App.css';
 const PREVIEW_POINTS = 820;
 const ZOOM_FACTOR = 0.6;
 
-interface Viewport {
-  start: number;
-  end: number;
+function newPanel(id: number): PanelState {
+  return { id, datasetId: null, channel: 0, source: 'raw', viewport: null };
 }
 
 function App() {
@@ -43,16 +42,13 @@ function App() {
   const [applyingFilter, setApplyingFilter] = useState(false);
   const [batchItems, setBatchItems] = useState<BatchItemStatus[] | null>(null);
 
-  const [panels, setPanels] = useState<PanelState[]>([
-    { id: 1, datasetId: null, channel: 0, source: 'raw' },
-  ]);
+  const [panels, setPanels] = useState<PanelState[]>([newPanel(1)]);
   const nextPanelId = useRef(2);
   const [previews, setPreviews] = useState<Record<number, PreviewResponse | null>>({});
   const [previewLoading, setPreviewLoading] = useState<Record<number, boolean>>({});
   const [panelImporting, setPanelImporting] = useState<Record<number, boolean>>({});
   const [saving, setSaving] = useState<Record<number, boolean>>({});
 
-  const [viewport, setViewport] = useState<Viewport | null>(null);
   const [flagsActive, setFlagsActive] = useState(false);
   const [flags, setFlags] = useState<Record<string, number[]>>({});
 
@@ -139,7 +135,7 @@ function App() {
   // --- Paneles de vista ---
 
   function handleAddView() {
-    setPanels((prev) => [...prev, { id: nextPanelId.current++, datasetId: null, channel: 0, source: 'raw' }]);
+    setPanels((prev) => [...prev, newPanel(nextPanelId.current++)]);
   }
 
   function handleRemoveView(panelId: number) {
@@ -153,7 +149,7 @@ function App() {
 
   async function handlePanelSelectDataset(panelId: number, datasetId: string) {
     setPanels((prev) =>
-      prev.map((p) => (p.id === panelId ? { ...p, datasetId, channel: 0, source: 'raw' } : p)),
+      prev.map((p) => (p.id === panelId ? { ...p, datasetId, channel: 0, source: 'raw', viewport: null } : p)),
     );
     setPanelImporting((prev) => ({ ...prev, [panelId]: true }));
     setError(null);
@@ -197,7 +193,9 @@ function App() {
   }
 
   // Refresca el preview de cada panel cuando cambian sus selecciones, los
-  // datasets cargados (p.ej. al terminar un filtro) o el viewport global.
+  // datasets cargados (p.ej. al terminar un filtro) o su propio viewport
+  // (independiente por vista, ver docs/architecture.md sobre no repetir el
+  // bug de un viewport compartido excediendo la duración de otro dataset).
   useEffect(() => {
     panels.forEach((panel) => {
       if (!panel.datasetId) return;
@@ -206,8 +204,8 @@ function App() {
       if (panel.source === 'filtered' && !ld.filterId) return;
 
       setPreviewLoading((prev) => ({ ...prev, [panel.id]: true }));
-      const start = viewport ? viewport.start * ld.info.sampling_rate_hz : undefined;
-      const end = viewport ? viewport.end * ld.info.sampling_rate_hz : undefined;
+      const start = panel.viewport ? panel.viewport.start * ld.info.sampling_rate_hz : undefined;
+      const end = panel.viewport ? panel.viewport.end * ld.info.sampling_rate_hz : undefined;
 
       getPreview({
         id: panel.source === 'raw' ? panel.datasetId : undefined,
@@ -222,54 +220,72 @@ function App() {
         .finally(() => setPreviewLoading((prev) => ({ ...prev, [panel.id]: false })));
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [panels, loaded, viewport]);
+  }, [panels, loaded]);
 
-  // --- Zoom / pan / home ---
+  // --- Zoom / pan / home (independiente por vista) ---
 
-  function referenceDuration(): number {
-    const durations = panels
-      .map((p) => (p.datasetId ? loaded[p.datasetId]?.info.duration_seconds : undefined))
-      .filter((d): d is number => !!d && d > 0);
-    return durations.length ? Math.max(...durations) : 60;
+  function panelReferenceDuration(panel: PanelState): number {
+    if (!panel.datasetId) return 60;
+    return loaded[panel.datasetId]?.info.duration_seconds || 60;
   }
 
-  function handleZoomIn() {
-    const ref = referenceDuration();
-    const [s, e] = viewport ? [viewport.start, viewport.end] : [0, ref];
-    const center = (s + e) / 2;
-    const half = Math.max(((e - s) * ZOOM_FACTOR) / 2, 0.25);
-    setViewport({ start: Math.max(0, center - half), end: Math.min(ref, center + half) });
+  function updatePanelViewport(panelId: number, compute: (panel: PanelState) => PanelState['viewport']) {
+    setPanels((prev) => prev.map((p) => (p.id === panelId ? { ...p, viewport: compute(p) } : p)));
   }
 
-  function handleZoomOut() {
-    const ref = referenceDuration();
-    const [s, e] = viewport ? [viewport.start, viewport.end] : [0, ref];
-    const center = (s + e) / 2;
-    const half = (e - s) / ZOOM_FACTOR / 2;
-    const start = Math.max(0, center - half);
-    const end = Math.min(ref, center + half);
-    if (end - start >= ref * 0.98) {
-      setViewport(null);
-      return;
-    }
-    setViewport({ start, end });
+  function handlePanelZoomIn(panelId: number) {
+    updatePanelViewport(panelId, (p) => {
+      const ref = panelReferenceDuration(p);
+      const [s, e] = p.viewport ? [p.viewport.start, p.viewport.end] : [0, ref];
+      const center = (s + e) / 2;
+      const half = Math.max(((e - s) * ZOOM_FACTOR) / 2, 0.25);
+      return { start: Math.max(0, center - half), end: Math.min(ref, center + half) };
+    });
   }
 
-  function handlePanLeft() {
-    if (!viewport) return;
-    const range = viewport.end - viewport.start;
-    const shift = range * 0.25;
-    const start = Math.max(0, viewport.start - shift);
-    setViewport({ start, end: start + range });
+  function handlePanelZoomOut(panelId: number) {
+    updatePanelViewport(panelId, (p) => {
+      const ref = panelReferenceDuration(p);
+      const [s, e] = p.viewport ? [p.viewport.start, p.viewport.end] : [0, ref];
+      const center = (s + e) / 2;
+      const half = (e - s) / ZOOM_FACTOR / 2;
+      const start = Math.max(0, center - half);
+      const end = Math.min(ref, center + half);
+      if (end - start >= ref * 0.98) return null;
+      return { start, end };
+    });
   }
 
-  function handlePanRight() {
-    if (!viewport) return;
-    const ref = referenceDuration();
-    const range = viewport.end - viewport.start;
-    const shift = range * 0.25;
-    const end = Math.min(ref, viewport.end + shift);
-    setViewport({ start: end - range, end });
+  function handlePanelPanLeft(panelId: number) {
+    updatePanelViewport(panelId, (p) => {
+      if (!p.viewport) return null;
+      const range = p.viewport.end - p.viewport.start;
+      const shift = range * 0.25;
+      const start = Math.max(0, p.viewport.start - shift);
+      return { start, end: start + range };
+    });
+  }
+
+  function handlePanelPanRight(panelId: number) {
+    updatePanelViewport(panelId, (p) => {
+      if (!p.viewport) return null;
+      const ref = panelReferenceDuration(p);
+      const range = p.viewport.end - p.viewport.start;
+      const shift = range * 0.25;
+      const end = Math.min(ref, p.viewport.end + shift);
+      return { start: end - range, end };
+    });
+  }
+
+  function handlePanelHome(panelId: number) {
+    updatePanelViewport(panelId, () => null);
+  }
+
+  function handlePanelZoomSelect(panelId: number, startSeconds: number, endSeconds: number) {
+    updatePanelViewport(panelId, (p) => {
+      const ref = panelReferenceDuration(p);
+      return { start: Math.max(0, startSeconds), end: Math.min(ref, endSeconds) };
+    });
   }
 
   // --- Flags ---
@@ -283,16 +299,6 @@ function App() {
   }
 
   const totalFlagCount = Object.values(flags).reduce((sum, arr) => sum + arr.length, 0);
-
-  // --- Zoom por selección (arrastrar sobre la señal, tipo lupa) ---
-
-  function handleZoomSelect(startSeconds: number, endSeconds: number) {
-    const ref = referenceDuration();
-    setViewport({
-      start: Math.max(0, startSeconds),
-      end: Math.min(ref, endSeconds),
-    });
-  }
 
   return (
     <div className="app">
@@ -331,12 +337,6 @@ function App() {
 
         <main className="charts">
           <ZoomToolbar
-            hasViewport={viewport !== null}
-            onZoomIn={handleZoomIn}
-            onZoomOut={handleZoomOut}
-            onPanLeft={handlePanLeft}
-            onPanRight={handlePanRight}
-            onHome={() => setViewport(null)}
             flagsActive={flagsActive}
             onToggleFlags={() => setFlagsActive((v) => !v)}
             flagCount={totalFlagCount}
@@ -366,7 +366,12 @@ function App() {
                 flagsActive={flagsActive}
                 onFlagClick={(sample) => panel.datasetId && handleFlagClick(panel.datasetId, sample)}
                 onFlagRemove={(sample) => panel.datasetId && handleFlagRemove(panel.datasetId, sample)}
-                onZoomSelect={handleZoomSelect}
+                onZoomSelect={(s, e) => handlePanelZoomSelect(panel.id, s, e)}
+                onZoomIn={() => handlePanelZoomIn(panel.id)}
+                onZoomOut={() => handlePanelZoomOut(panel.id)}
+                onPanLeft={() => handlePanelPanLeft(panel.id)}
+                onPanRight={() => handlePanelPanRight(panel.id)}
+                onHome={() => handlePanelHome(panel.id)}
               />
             ))}
           </div>

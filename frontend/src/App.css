@@ -471,6 +471,17 @@
   flex-wrap: wrap;
 }
 
+.view-panel-zoom {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.view-panel-zoom .button-icon {
+  padding: 4px 8px;
+  font-size: 11px;
+}
+
 .view-panel-controls .select {
   flex: 1;
   min-width: 120px;

@@ -1,10 +1,4 @@
 interface Props {
-  hasViewport: boolean;
-  onZoomIn: () => void;
-  onZoomOut: () => void;
-  onPanLeft: () => void;
-  onPanRight: () => void;
-  onHome: () => void;
   flagsActive: boolean;
   onToggleFlags: () => void;
   flagCount: number;
@@ -12,38 +6,12 @@ interface Props {
   onAddView: () => void;
 }
 
-export function ZoomToolbar({
-  hasViewport,
-  onZoomIn,
-  onZoomOut,
-  onPanLeft,
-  onPanRight,
-  onHome,
-  flagsActive,
-  onToggleFlags,
-  flagCount,
-  onClearFlags,
-  onAddView,
-}: Props) {
+// Zoom/pan/home viven ahora dentro de cada ViewPanel (independientes por
+// vista) -- esta barra solo agrupa lo que sigue siendo global: flags y
+// añadir vistas.
+export function ZoomToolbar({ flagsActive, onToggleFlags, flagCount, onClearFlags, onAddView }: Props) {
   return (
     <div className="toolbar">
-      <div className="toolbar-group">
-        <button className="button-icon" onClick={onPanLeft} disabled={!hasViewport} title="Mover a la izquierda">
-          ◀
-        </button>
-        <button className="button-icon" onClick={onZoomOut} title="Alejar">
-          −
-        </button>
-        <button className="button-icon" onClick={onZoomIn} title="Acercar">
-          +
-        </button>
-        <button className="button-icon" onClick={onPanRight} disabled={!hasViewport} title="Mover a la derecha">
-          ▶
-        </button>
-        <button className="button-icon" onClick={onHome} disabled={!hasViewport} title="Vista inicial">
-          ⌂ Inicio
-        </button>
-      </div>
       <div className="toolbar-group">
         <button
           className={`button-toggle${flagsActive ? ' active' : ''}`}

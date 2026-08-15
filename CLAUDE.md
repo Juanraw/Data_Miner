@@ -104,6 +104,14 @@ Fixes tras uso real reportado por el usuario:
 - Quitar un flag individual: clic cerca de un flag existente (con flags
   activos) lo quita en vez de agregar uno nuevo encima; también hay un panel
   "Flags" en el sidebar con lista + botón de quitar por cada uno.
+- El viewport (zoom/pan/home) dejó de ser global y ahora vive en
+  `PanelState.viewport`, independiente por vista — cada panel tiene su propia
+  mini barra de zoom. Esto también resolvió de raíz un bug real: con viewport
+  compartido, hacer zoom en un sujeto largo y luego ver uno más corto en otra
+  vista pedía un rango fuera del alcance de ese dataset y la vista quedaba en
+  blanco sin explicación (reproducido con curl antes del fix). El backend
+  (`Preview.cpp`) también recorta `start_sample` ahora, no solo `end_sample`,
+  como defensa adicional.
 
 Próximo paso: Fase 6/7 — pipeline engine con proveniencia encadenada, o
 batch processing con estado persistido/reanudación.

@@ -7,11 +7,17 @@ export interface LoadedDataset {
   filtering: boolean;
 }
 
+export interface Viewport {
+  start: number;
+  end: number;
+}
+
 export interface PanelState {
   id: number;
   datasetId: string | null;
   channel: number;
   source: 'raw' | 'filtered';
+  viewport: Viewport | null; // independiente por vista
 }
 
 interface Props {
@@ -34,6 +40,11 @@ interface Props {
   onFlagClick: (sample: number) => void;
   onFlagRemove: (sample: number) => void;
   onZoomSelect: (startSeconds: number, endSeconds: number) => void;
+  onZoomIn: () => void;
+  onZoomOut: () => void;
+  onPanLeft: () => void;
+  onPanRight: () => void;
+  onHome: () => void;
 }
 
 export function ViewPanel({
@@ -56,8 +67,14 @@ export function ViewPanel({
   onFlagClick,
   onFlagRemove,
   onZoomSelect,
+  onZoomIn,
+  onZoomOut,
+  onPanLeft,
+  onPanRight,
+  onHome,
 }: Props) {
   const current = panel.datasetId ? loaded[panel.datasetId] : undefined;
+  const hasViewport = panel.viewport !== null;
 
   return (
     <div className="view-panel">
@@ -121,6 +138,26 @@ export function ViewPanel({
           </button>
         )}
       </div>
+
+      {current && (
+        <div className="view-panel-zoom">
+          <button className="button-icon" onClick={onPanLeft} disabled={!hasViewport} title="Mover a la izquierda">
+            ◀
+          </button>
+          <button className="button-icon" onClick={onZoomOut} title="Alejar">
+            −
+          </button>
+          <button className="button-icon" onClick={onZoomIn} title="Acercar">
+            +
+          </button>
+          <button className="button-icon" onClick={onPanRight} disabled={!hasViewport} title="Mover a la derecha">
+            ▶
+          </button>
+          <button className="button-icon" onClick={onHome} disabled={!hasViewport} title="Vista inicial">
+            ⌂ Inicio
+          </button>
+        </div>
+      )}
 
       {!panel.datasetId ? (
         <div className="empty-state">Elige un dataset para esta vista.</div>
