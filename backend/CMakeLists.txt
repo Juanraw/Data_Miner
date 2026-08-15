@@ -17,6 +17,9 @@ find_package(Threads REQUIRED)
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(MATIO REQUIRED IMPORTED_TARGET matio)
 
+# Infraestructura de serialización para la API (no procesamiento científico).
+find_package(nlohmann_json REQUIRED)
+
 # Núcleo científico: sin dependencias de Boost.Beast/Asio ni de red (ver
 # docs/architecture.md). libmatio es infraestructura de serialización
 # (ADR-001), no un algoritmo científico.
@@ -52,8 +55,25 @@ add_library(executor STATIC
 target_include_directories(executor PUBLIC src)
 target_link_libraries(executor PUBLIC Threads::Threads)
 
+# Capa de transporte (Fase 4): traduce HTTP/JSON a llamadas sobre
+# importers/algorithms/executor. No contiene lógica científica — ver
+# docs/architecture.md sobre la regla de dependencia api/ -> resto, nunca al
+# revés.
+add_library(api STATIC
+    src/api/BatchStore.cpp
+    src/api/DatasetCatalog.cpp
+    src/api/DatasetStore.cpp
+    src/api/JsonSerialization.cpp
+    src/api/Preview.cpp
+    src/api/SignalExport.cpp
+    src/api/HttpServer.cpp
+)
+target_include_directories(api PUBLIC src)
+target_link_libraries(api PUBLIC importers algorithms executor
+    ${Boost_LIBRARIES} nlohmann_json::nlohmann_json)
+
 add_executable(backend src/main.cpp)
-target_link_libraries(backend ${Boost_LIBRARIES} core)
+target_link_libraries(backend api)
 
 enable_testing()
 

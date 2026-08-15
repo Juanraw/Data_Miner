@@ -16,7 +16,7 @@ FROM ubuntu:22.04 AS builder-backend
 
 # Instalar herramientas de compilación
 RUN apt-get update && apt-get install -y \
-    git cmake g++ pkg-config libboost-all-dev libmatio-dev \
+    git cmake g++ pkg-config libboost-all-dev libmatio-dev nlohmann-json3-dev \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

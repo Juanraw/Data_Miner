@@ -65,10 +65,36 @@ datos interno, importador `.set`/`.fdt`). Fase 3 completada:
   sujeto real de OpenNeuro ds004504 — prueba end-to-end del núcleo científico
   headless, sin `api/` ni frontend.
 
-`backend/src/main.cpp` sigue siendo el demo de eco HTTP/WS original, a
-reemplazar — no la base del `api/` final (ver `docs/architecture.md`). Próximo
-paso: Fase 4/6 — decidir si seguir con más algoritmos (rereferenciación) o
-empezar el pipeline engine con proveniencia que los encadene.
+Fase 4 completada: `backend/src/main.cpp` ya no es el demo de eco — `api/`
+reemplaza el servidor original con routing real sobre Boost.Beast:
+- `GET /api/datasets`, `GET /api/import`, `GET /api/preview`,
+  `POST /api/filter`, `POST /api/batch-filter` + `GET /api/batch` (tratamiento
+  en masa, cada dataset en su propio worker del pool — paralelismo real,
+  verificado con 2 sujetos reales corriendo simultáneamente), `POST /api/save`
+  (checkpoint nativo `.bin` + manifiesto `.json` con proveniencia completa en
+  `data/processed/`, ver `SignalExport.hpp` — **no** es un exportador a `.set`,
+  eso sigue pendiente).
+- `DatasetStore`/`BatchStore`: caché en memoria, sin persistencia entre
+  reinicios (Fase 7 para eso).
+- Frontend reescrito por completo (ya no es la plantilla de Vite): múltiples
+  paneles de vista simultáneos (comparar canales del mismo sujeto o sujetos
+  distintos), zoom/pan/home con viewport compartido en segundos, flags (marcar
+  un punto de interés que se mantiene alineado entre señal original y
+  filtrada, ya que el filtro preserva 1:1 el índice de muestra), selección de
+  datasets con checkboxes para lote. Canvas con paleta validada por
+  accesibilidad (ver skill de dataviz).
+
+Verificado por API con datos reales (import, preview, filtro, lote paralelo,
+guardado con tamaño de archivo exacto) y compilación TypeScript limpia. **No
+verificado visualmente en navegador** — la verificación automatizada con
+Chromium headless (Playwright) choca con una incompatibilidad específica
+entre el runtime Bun y el transporte WebSocket interno de playwright-core
+(un WebSocket nativo sí conecta; el de playwright-core no, incluso apuntando
+a 127.0.0.1 explícitamente). Pendiente: o bien instalar Node.js para probar
+ese pipeline, o verificación manual abriendo `localhost:8090`.
+
+Próximo paso: Fase 6/7 — pipeline engine con proveniencia encadenada, o
+batch processing con estado persistido/reanudación.
 
 ## Qué NO hacer sin decisión explícita
 - No añadir dependencias de terceros que resuelvan directamente algoritmos
