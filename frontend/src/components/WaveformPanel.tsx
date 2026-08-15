@@ -295,6 +295,11 @@ export function WaveformPanel({
         />
         {loading && <div className="waveform-overlay">Cargando…</div>}
         {!loading && !preview && <div className="waveform-overlay muted">Sin datos</div>}
+        {!loading && preview && preview.min.length === 0 && (
+          <div className="waveform-overlay muted">
+            Fuera del rango de este dataset (dura {(preview.end_sample / preview.sampling_rate_hz).toFixed(1)}s) — usa Inicio para restablecer el zoom.
+          </div>
+        )}
         {dragStartX !== null && dragCurrentX !== null && (
           <div
             className="zoom-select-box"

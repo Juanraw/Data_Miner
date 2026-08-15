@@ -14,6 +14,13 @@ PreviewResult decimateChannel(const core::SignalData& signal, std::size_t channe
         throw std::out_of_range("decimateChannel: canal fuera de rango");
     }
 
+    // Ambos extremos se recortan al tamaño real del buffer: un viewport
+    // compartido entre varias vistas (ver App.tsx) puede pedir un rango que
+    // excede la duración de ESTE dataset en particular (p.ej. comparando un
+    // sujeto de 600s con uno de 300s) -- start_sample sin recortar quedaba
+    // reportado más allá del final real, dando una respuesta "vacía" difícil
+    // de distinguir de un error real.
+    start_sample = std::min(start_sample, buffer.nSamples());
     end_sample = std::min(end_sample, buffer.nSamples());
     if (max_points == 0) max_points = 1;
 
