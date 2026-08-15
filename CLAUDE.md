@@ -45,10 +45,14 @@ proveniencia van a `data/processed/` y `data/logs/`.
 importador debe manejar ambos casos explícitamente — ver `docs/adr/002-*.md`.
 
 ## Estado (2026-08-14)
-Fase -1/0 completada: estructura de carpetas, ADRs, flags de build. Nada del núcleo
-científico está implementado todavía — `backend/src/main.cpp` es un demo de eco
-HTTP/WS a reemplazar, no la base del `api/` final (ver `docs/architecture.md`).
-Próximo paso: Fase 1, modelo de datos interno + integración de libmatio.
+Fase -1/0 completada: estructura de carpetas, ADRs, flags de build, build de
+verificación en Docker confirmada (contenedor arranca y responde en :8090).
+Fase 1 completada: `core/SignalBuffer` y `core/SignalData` (representación interna,
+ADR-003) implementados y probados; libmatio enlazada y verificada (ADR-001) vía
+`backend/tests/core_smoke_test.cpp`, que corre dentro del build de Docker y lo
+detiene si falla. `backend/src/main.cpp` sigue siendo el demo de eco HTTP/WS
+original, a reemplazar — no la base del `api/` final (ver `docs/architecture.md`).
+Próximo paso: Fase 2, importador de `.set`/`.fdt` sobre `core/`.
 
 ## Qué NO hacer sin decisión explícita
 - No añadir dependencias de terceros que resuelvan directamente algoritmos

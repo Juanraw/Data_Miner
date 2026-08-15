@@ -16,7 +16,7 @@ FROM ubuntu:22.04 AS builder-backend
 
 # Instalar herramientas de compilación
 RUN apt-get update && apt-get install -y \
-    git cmake g++ libboost-all-dev \
+    git cmake g++ pkg-config libboost-all-dev libmatio-dev \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -27,6 +27,10 @@ RUN mkdir -p build && cd build && \
     cmake -DCMAKE_BUILD_TYPE=Release ../backend && \
     make
 
+# Smoke test de core/ (modelo de datos + enlace con libmatio, ver ADR-001):
+# si falla, el build se detiene aquí en vez de producir una imagen rota.
+RUN cd build && ./core_smoke_test
+
 # ------------------------------------------------------------
 # ETAPA 3: Imagen FINAL (solo lo necesario para ejecutar)
 # ------------------------------------------------------------
@@ -34,7 +38,7 @@ FROM ubuntu:22.04
 
 # Instalar solo las librerías necesarias para correr (no las de compilación)
 RUN apt-get update && apt-get install -y \
-    libboost-all-dev \
+    libboost-all-dev libmatio11 \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
