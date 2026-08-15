@@ -40,6 +40,7 @@ interface Props {
   onFlagClick: (sample: number) => void;
   onFlagRemove: (sample: number) => void;
   onZoomSelect: (startSeconds: number, endSeconds: number) => void;
+  onWheelPan: (direction: 1 | -1) => void;
   onZoomIn: () => void;
   onZoomOut: () => void;
   onPanLeft: () => void;
@@ -67,6 +68,7 @@ export function ViewPanel({
   onFlagClick,
   onFlagRemove,
   onZoomSelect,
+  onWheelPan,
   onZoomIn,
   onZoomOut,
   onPanLeft,
@@ -172,6 +174,7 @@ export function ViewPanel({
           onFlagClick={onFlagClick}
           onFlagRemove={onFlagRemove}
           onZoomSelect={onZoomSelect}
+          onWheelPan={onWheelPan}
         />
       )}
     </div>

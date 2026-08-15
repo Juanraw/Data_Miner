@@ -12,6 +12,7 @@ interface Props {
   onFlagClick?: (sampleIndex: number) => void;
   onFlagRemove?: (sampleIndex: number) => void;
   onZoomSelect?: (startSeconds: number, endSeconds: number) => void;
+  onWheelPan?: (direction: 1 | -1) => void;
 }
 
 const PAD_LEFT = 52;
@@ -39,6 +40,7 @@ export function WaveformPanel({
   onFlagClick,
   onFlagRemove,
   onZoomSelect,
+  onWheelPan,
 }: Props) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -46,6 +48,33 @@ export function WaveformPanel({
   const [hover, setHover] = useState<HoverInfo | null>(null);
   const [dragStartX, setDragStartX] = useState<number | null>(null);
   const [dragCurrentX, setDragCurrentX] = useState<number | null>(null);
+  const wheelAccumRef = useRef(0);
+  const wheelTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Listener nativo (no pasivo) para poder bloquear el scroll de la página
+  // mientras se navega la señal con la rueda -- React registra onWheel como
+  // pasivo por defecto, así que preventDefault() ahí no tendría efecto.
+  // Los eventos se acumulan y se aplican en lotes (throttle) para no disparar
+  // una petición de preview por cada tick de la rueda.
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas || !onWheelPan) return;
+
+    function handleNativeWheel(e: WheelEvent) {
+      e.preventDefault();
+      wheelAccumRef.current += e.deltaY;
+      if (wheelTimerRef.current) return;
+      wheelTimerRef.current = setTimeout(() => {
+        const total = wheelAccumRef.current;
+        wheelAccumRef.current = 0;
+        wheelTimerRef.current = null;
+        if (total !== 0) onWheelPan!(total > 0 ? 1 : -1);
+      }, 60);
+    }
+
+    canvas.addEventListener('wheel', handleNativeWheel, { passive: false });
+    return () => canvas.removeEventListener('wheel', handleNativeWheel);
+  }, [onWheelPan]);
 
   // El canvas se ajusta al ancho real del contenedor (no un ancho fijo) --
   // con varias vistas lado a lado el panel se angosta y un ancho fijo hacía
@@ -324,7 +353,7 @@ export function WaveformPanel({
         )}
       </div>
       <p className="waveform-hint muted">
-        Arrastra para hacer zoom sobre un rango
+        Arrastra para hacer zoom · rueda del mouse para avanzar/retroceder
         {flagsActive ? ' · clic para marcar/quitar un flag' : ''}.
       </p>
     </div>

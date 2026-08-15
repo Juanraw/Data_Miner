@@ -288,6 +288,30 @@ function App() {
     });
   }
 
+  // Avanzar/retroceder con la rueda del mouse. A diferencia de los botones
+  // de pan (deshabilitados sin zoom previo), la rueda funciona de inmediato:
+  // si todavía no hay viewport, arranca con una ventana reducida en vez de
+  // no hacer nada.
+  function handlePanelWheelPan(panelId: number, direction: 1 | -1) {
+    updatePanelViewport(panelId, (p) => {
+      const ref = panelReferenceDuration(p);
+      const current = p.viewport ?? { start: 0, end: Math.min(ref, Math.max(ref * 0.2, 5)) };
+      const range = current.end - current.start;
+      const shift = range * 0.2 * direction;
+
+      let start = current.start + shift;
+      let end = current.end + shift;
+      if (start < 0) {
+        start = 0;
+        end = range;
+      } else if (end > ref) {
+        end = ref;
+        start = Math.max(0, ref - range);
+      }
+      return { start, end };
+    });
+  }
+
   // --- Flags ---
 
   function handleFlagClick(datasetId: string, sample: number) {
@@ -367,6 +391,7 @@ function App() {
                 onFlagClick={(sample) => panel.datasetId && handleFlagClick(panel.datasetId, sample)}
                 onFlagRemove={(sample) => panel.datasetId && handleFlagRemove(panel.datasetId, sample)}
                 onZoomSelect={(s, e) => handlePanelZoomSelect(panel.id, s, e)}
+                onWheelPan={(direction) => handlePanelWheelPan(panel.id, direction)}
                 onZoomIn={() => handlePanelZoomIn(panel.id)}
                 onZoomOut={() => handlePanelZoomOut(panel.id)}
                 onPanLeft={() => handlePanelPanLeft(panel.id)}
