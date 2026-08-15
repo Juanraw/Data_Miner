@@ -1,0 +1,11 @@
+version: '3.8'
+services:
+  app:
+    build: .
+    ports:
+      - "8090:8090"   # HTTP + WebSocket (mismo puerto, ver backend/src/main.cpp)
+    volumes:
+      - ./data/raw:/app/data/raw
+      - ./data/processed:/app/data/processed
+      - ./data/logs:/app/data/logs
+    restart: unless-stopped

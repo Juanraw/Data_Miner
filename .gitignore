@@ -1,0 +1,22 @@
+# Backend build artifacts
+backend/build/
+build/
+*.o
+*.obj
+
+# Frontend (frontend/ has its own .gitignore for node_modules, dist, etc.)
+
+# Datasets and processing outputs — never commit biomedical data or generated results
+data/raw/*
+data/processed/*
+data/logs/*
+!data/raw/.gitkeep
+!data/processed/.gitkeep
+!data/logs/.gitkeep
+
+# Editor / OS
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.DS_Store
+Thumbs.db
