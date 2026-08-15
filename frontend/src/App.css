@@ -306,6 +306,53 @@
   cursor: crosshair;
 }
 
+.waveform-hint {
+  margin: 6px 0 0;
+  font-size: 11px;
+}
+
+.zoom-select-box {
+  position: absolute;
+  background: color-mix(in srgb, var(--series-1) 20%, transparent);
+  border-left: 1px solid var(--series-1);
+  border-right: 1px solid var(--series-1);
+  pointer-events: none;
+}
+
+.flags-group + .flags-group {
+  margin-top: 10px;
+}
+
+.flags-group-title {
+  margin-bottom: 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.flags-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 12px;
+}
+
+.flags-list li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 0;
+}
+
+.flags-list .button-icon {
+  padding: 0 6px;
+  line-height: 1.6;
+}
+
 /* --- Toolbar de zoom/pan/flags/vistas --- */
 
 .toolbar {
@@ -411,6 +458,8 @@
   display: flex;
   flex-direction: column;
   gap: 10px;
+  min-width: 0; /* deja que la celda del grid se achique aunque el canvas
+                   interno mida su ancho a partir de este contenedor */
 }
 
 .view-panel-controls {

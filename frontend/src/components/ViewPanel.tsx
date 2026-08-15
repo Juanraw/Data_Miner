@@ -32,6 +32,8 @@ interface Props {
   flags: number[];
   flagsActive: boolean;
   onFlagClick: (sample: number) => void;
+  onFlagRemove: (sample: number) => void;
+  onZoomSelect: (startSeconds: number, endSeconds: number) => void;
 }
 
 export function ViewPanel({
@@ -52,6 +54,8 @@ export function ViewPanel({
   flags,
   flagsActive,
   onFlagClick,
+  onFlagRemove,
+  onZoomSelect,
 }: Props) {
   const current = panel.datasetId ? loaded[panel.datasetId] : undefined;
 
@@ -129,6 +133,8 @@ export function ViewPanel({
           flags={flags}
           flagsActive={flagsActive}
           onFlagClick={onFlagClick}
+          onFlagRemove={onFlagRemove}
+          onZoomSelect={onZoomSelect}
         />
       )}
     </div>

@@ -93,6 +93,18 @@ entre el runtime Bun y el transporte WebSocket interno de playwright-core
 a 127.0.0.1 explícitamente). Pendiente: o bien instalar Node.js para probar
 ese pipeline, o verificación manual abriendo `localhost:8090`.
 
+Fixes tras uso real reportado por el usuario:
+- `WaveformPanel` medía su canvas con un ancho fijo (820px) en vez del ancho
+  real del contenedor — con 2+ vistas lado a lado la señal se salía del
+  recuadro. Ahora usa `ResizeObserver` sobre el wrapper (+ `min-width: 0` en
+  `.view-panel`, la causa clásica de que un grid item no se achique cuando su
+  hijo mide su propio tamaño).
+- Zoom por selección (arrastrar sobre la señal, estilo lupa) además de los
+  botones +/−, vía `onZoomSelect` en `WaveformPanel`.
+- Quitar un flag individual: clic cerca de un flag existente (con flags
+  activos) lo quita en vez de agregar uno nuevo encima; también hay un panel
+  "Flags" en el sidebar con lista + botón de quitar por cada uno.
+
 Próximo paso: Fase 6/7 — pipeline engine con proveniencia encadenada, o
 batch processing con estado persistido/reanudación.
 

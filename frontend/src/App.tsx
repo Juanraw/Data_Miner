@@ -16,6 +16,7 @@ import {
 import { BatchProgress } from './components/BatchProgress';
 import { DatasetPicker } from './components/DatasetPicker';
 import { FilterControls } from './components/FilterControls';
+import { FlagsPanel } from './components/FlagsPanel';
 import { ViewPanel, type LoadedDataset, type PanelState } from './components/ViewPanel';
 import { ZoomToolbar } from './components/ZoomToolbar';
 import './App.css';
@@ -277,7 +278,21 @@ function App() {
     setFlags((prev) => ({ ...prev, [datasetId]: [...(prev[datasetId] ?? []), sample] }));
   }
 
+  function handleFlagRemove(datasetId: string, sample: number) {
+    setFlags((prev) => ({ ...prev, [datasetId]: (prev[datasetId] ?? []).filter((s) => s !== sample) }));
+  }
+
   const totalFlagCount = Object.values(flags).reduce((sum, arr) => sum + arr.length, 0);
+
+  // --- Zoom por selección (arrastrar sobre la señal, tipo lupa) ---
+
+  function handleZoomSelect(startSeconds: number, endSeconds: number) {
+    const ref = referenceDuration();
+    setViewport({
+      start: Math.max(0, startSeconds),
+      end: Math.min(ref, endSeconds),
+    });
+  }
 
   return (
     <div className="app">
@@ -311,6 +326,7 @@ function App() {
             selectedCount={selectedForBatch.size}
           />
           {batchItems && <BatchProgress items={batchItems} />}
+          <FlagsPanel flags={flags} loaded={loaded} onRemove={handleFlagRemove} />
         </aside>
 
         <main className="charts">
@@ -349,6 +365,8 @@ function App() {
                 flags={panel.datasetId ? flags[panel.datasetId] ?? [] : []}
                 flagsActive={flagsActive}
                 onFlagClick={(sample) => panel.datasetId && handleFlagClick(panel.datasetId, sample)}
+                onFlagRemove={(sample) => panel.datasetId && handleFlagRemove(panel.datasetId, sample)}
+                onZoomSelect={handleZoomSelect}
               />
             ))}
           </div>

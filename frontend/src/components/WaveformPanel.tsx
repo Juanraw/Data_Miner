@@ -10,13 +10,16 @@ interface Props {
   flags?: number[]; // índices de muestra (mismo espacio que preview.start_sample)
   flagsActive?: boolean;
   onFlagClick?: (sampleIndex: number) => void;
+  onFlagRemove?: (sampleIndex: number) => void;
+  onZoomSelect?: (startSeconds: number, endSeconds: number) => void;
 }
 
-const WIDTH = 820;
 const PAD_LEFT = 52;
 const PAD_RIGHT = 8;
 const PAD_TOP = 10;
 const PAD_BOTTOM = 22;
+const DRAG_THRESHOLD_PX = 5;
+const FLAG_HIT_TOLERANCE_PX = 6;
 
 interface HoverInfo {
   x: number;
@@ -34,11 +37,31 @@ export function WaveformPanel({
   flags = [],
   flagsActive = false,
   onFlagClick,
+  onFlagRemove,
+  onZoomSelect,
 }: Props) {
+  const wrapRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [width, setWidth] = useState(600);
   const [hover, setHover] = useState<HoverInfo | null>(null);
+  const [dragStartX, setDragStartX] = useState<number | null>(null);
+  const [dragCurrentX, setDragCurrentX] = useState<number | null>(null);
 
-  const plotW = WIDTH - PAD_LEFT - PAD_RIGHT;
+  // El canvas se ajusta al ancho real del contenedor (no un ancho fijo) --
+  // con varias vistas lado a lado el panel se angosta y un ancho fijo hacía
+  // que la señal se saliera del recuadro.
+  useEffect(() => {
+    const el = wrapRef.current;
+    if (!el) return;
+    const observer = new ResizeObserver((entries) => {
+      const w = entries[0]?.contentRect.width;
+      if (w && w > 0) setWidth(Math.floor(w));
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
+  const plotW = width - PAD_LEFT - PAD_RIGHT;
   const plotH = height - PAD_TOP - PAD_BOTTOM;
 
   const yDomain = useMemo(() => {
@@ -55,7 +78,8 @@ export function WaveformPanel({
 
   // Convierte un índice de muestra a coordenada X del área de trazado,
   // relativo a la ventana visible actual de 'preview' (independiente del
-  // número de buckets, para posicionar flags con precisión).
+  // número de buckets, para posicionar flags con precisión). null si el
+  // punto no es visible en la ventana actual.
   function sampleToX(sampleIndex: number): number | null {
     if (!preview) return null;
     const range = preview.end_sample - preview.start_sample;
@@ -65,6 +89,22 @@ export function WaveformPanel({
     return PAD_LEFT + fraction * plotW;
   }
 
+  // Inversa de sampleToX, sin recortar (para selección de zoom, que puede
+  // arrastrarse ligeramente fuera del área de trazado).
+  function xToSampleClamped(x: number): number | null {
+    if (!preview) return null;
+    const relative = (x - PAD_LEFT) / plotW;
+    const clamped = Math.min(1, Math.max(0, relative));
+    return Math.round(preview.start_sample + clamped * (preview.end_sample - preview.start_sample));
+  }
+
+  function sampleAtX(x: number): number | null {
+    if (!preview) return null;
+    const relative = (x - PAD_LEFT) / plotW;
+    if (relative < 0 || relative > 1) return null;
+    return Math.round(preview.start_sample + relative * (preview.end_sample - preview.start_sample));
+  }
+
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -72,9 +112,9 @@ export function WaveformPanel({
     if (!ctx) return;
 
     const dpr = window.devicePixelRatio || 1;
-    canvas.width = WIDTH * dpr;
+    canvas.width = width * dpr;
     canvas.height = height * dpr;
-    canvas.style.width = `${WIDTH}px`;
+    canvas.style.width = `${width}px`;
     canvas.style.height = `${height}px`;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
@@ -86,9 +126,9 @@ export function WaveformPanel({
     const seriesColor = style.getPropertyValue(colorVar).trim();
     const flagColor = style.getPropertyValue('--flag-color').trim();
 
-    ctx.clearRect(0, 0, WIDTH, height);
+    ctx.clearRect(0, 0, width, height);
     ctx.fillStyle = surface;
-    ctx.fillRect(0, 0, WIDTH, height);
+    ctx.fillRect(0, 0, width, height);
 
     if (!preview || preview.min.length === 0 || !yDomain) return;
 
@@ -103,7 +143,7 @@ export function WaveformPanel({
       ctx.beginPath();
       const y0 = yFor(0);
       ctx.moveTo(PAD_LEFT, y0);
-      ctx.lineTo(WIDTH - PAD_RIGHT, y0);
+      ctx.lineTo(width - PAD_RIGHT, y0);
       ctx.stroke();
     } else {
       ctx.strokeStyle = gridline;
@@ -157,21 +197,28 @@ export function WaveformPanel({
     ctx.textBaseline = 'alphabetic';
     ctx.fillText(`${t0.toFixed(1)}s`, PAD_LEFT, height - 6);
     ctx.textAlign = 'right';
-    ctx.fillText(`${t1.toFixed(1)}s`, WIDTH - PAD_RIGHT, height - 6);
+    ctx.fillText(`${t1.toFixed(1)}s`, width - PAD_RIGHT, height - 6);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [preview, colorVar, height, plotW, plotH, yDomain, flags]);
+  }, [preview, colorVar, height, width, plotW, plotH, yDomain, flags]);
 
-  function sampleAtX(x: number): number | null {
-    if (!preview) return null;
-    const relative = (x - PAD_LEFT) / plotW;
-    if (relative < 0 || relative > 1) return null;
-    return Math.round(preview.start_sample + relative * (preview.end_sample - preview.start_sample));
+  function handleMouseDown(e: React.MouseEvent<HTMLCanvasElement>) {
+    if (!preview) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    setDragStartX(x);
+    setDragCurrentX(x);
   }
 
   function handleMouseMove(e: React.MouseEvent<HTMLCanvasElement>) {
-    if (!preview || preview.min.length === 0) return;
     const rect = e.currentTarget.getBoundingClientRect();
     const x = e.clientX - rect.left;
+
+    if (dragStartX !== null) {
+      setDragCurrentX(x);
+      return; // durante el arrastre no se muestra el tooltip de hover
+    }
+
+    if (!preview || preview.min.length === 0) return;
     const sample = sampleAtX(x);
     if (sample === null) {
       setHover(null);
@@ -188,11 +235,47 @@ export function WaveformPanel({
     });
   }
 
-  function handleClick(e: React.MouseEvent<HTMLCanvasElement>) {
-    if (!flagsActive || !onFlagClick) return;
+  function handleSimpleClick(x: number) {
+    if (!flagsActive) return;
+    const clickSample = sampleAtX(x);
+    if (clickSample === null) return;
+
+    // Si el clic cae cerca de un flag ya existente, se quita ese flag en
+    // vez de agregar uno nuevo encima (permite quitar flags uno por uno).
+    for (const sample of flags) {
+      const fx = sampleToX(sample);
+      if (fx !== null && Math.abs(fx - x) <= FLAG_HIT_TOLERANCE_PX) {
+        onFlagRemove?.(sample);
+        return;
+      }
+    }
+    onFlagClick?.(clickSample);
+  }
+
+  function handleMouseUp(e: React.MouseEvent<HTMLCanvasElement>) {
+    if (dragStartX === null) return;
     const rect = e.currentTarget.getBoundingClientRect();
-    const sample = sampleAtX(e.clientX - rect.left);
-    if (sample !== null) onFlagClick(sample);
+    const endX = e.clientX - rect.left;
+    const startX = dragStartX;
+    setDragStartX(null);
+    setDragCurrentX(null);
+
+    if (Math.abs(endX - startX) < DRAG_THRESHOLD_PX) {
+      handleSimpleClick(endX);
+      return;
+    }
+
+    if (!preview || !onZoomSelect) return;
+    const s1 = xToSampleClamped(Math.min(startX, endX));
+    const s2 = xToSampleClamped(Math.max(startX, endX));
+    if (s1 === null || s2 === null || s2 <= s1) return;
+    onZoomSelect(s1 / preview.sampling_rate_hz, s2 / preview.sampling_rate_hz);
+  }
+
+  function handleMouseLeave() {
+    setHover(null);
+    setDragStartX(null);
+    setDragCurrentX(null);
   }
 
   return (
@@ -201,20 +284,32 @@ export function WaveformPanel({
         <span className="waveform-panel-title">{title}</span>
         {preview && <span className="muted">{preview.channel_label}</span>}
       </div>
-      <div className="waveform-canvas-wrap" style={{ height }}>
+      <div className="waveform-canvas-wrap" style={{ height }} ref={wrapRef}>
         <canvas
           ref={canvasRef}
+          onMouseDown={handleMouseDown}
           onMouseMove={handleMouseMove}
-          onMouseLeave={() => setHover(null)}
-          onClick={handleClick}
+          onMouseUp={handleMouseUp}
+          onMouseLeave={handleMouseLeave}
           className={flagsActive ? 'flag-cursor' : undefined}
         />
         {loading && <div className="waveform-overlay">Cargando…</div>}
         {!loading && !preview && <div className="waveform-overlay muted">Sin datos</div>}
-        {hover && (
+        {dragStartX !== null && dragCurrentX !== null && (
+          <div
+            className="zoom-select-box"
+            style={{
+              left: Math.min(dragStartX, dragCurrentX),
+              width: Math.abs(dragCurrentX - dragStartX),
+              top: PAD_TOP,
+              bottom: PAD_BOTTOM,
+            }}
+          />
+        )}
+        {hover && dragStartX === null && (
           <>
             <div className="crosshair-line" style={{ left: hover.x }} />
-            <div className="crosshair-tooltip" style={{ left: Math.min(hover.x + 10, WIDTH - 150) }}>
+            <div className="crosshair-tooltip" style={{ left: Math.min(hover.x + 10, width - 150) }}>
               <div>t = {hover.timeSeconds.toFixed(2)}s</div>
               <div>
                 {hover.min.toFixed(2)} … {hover.max.toFixed(2)} µV
@@ -223,6 +318,10 @@ export function WaveformPanel({
           </>
         )}
       </div>
+      <p className="waveform-hint muted">
+        Arrastra para hacer zoom sobre un rango
+        {flagsActive ? ' · clic para marcar/quitar un flag' : ''}.
+      </p>
     </div>
   );
 }
