@@ -17,16 +17,12 @@ import { BatchProgress } from './components/BatchProgress';
 import { DatasetPicker } from './components/DatasetPicker';
 import { FilterControls } from './components/FilterControls';
 import { FlagsPanel } from './components/FlagsPanel';
-import { ViewPanel, type LoadedDataset, type PanelState } from './components/ViewPanel';
+import { ViewPanel, type LoadedDataset, type PanelState, type Viewport } from './components/ViewPanel';
 import { ZoomToolbar } from './components/ZoomToolbar';
 import './App.css';
 
 const PREVIEW_POINTS = 820;
 const ZOOM_FACTOR = 0.6;
-
-function newPanel(id: number): PanelState {
-  return { id, datasetId: null, channel: 0, source: 'raw', viewport: null };
-}
 
 function App() {
   const [datasets, setDatasets] = useState<DatasetEntry[]>([]);
@@ -42,12 +38,15 @@ function App() {
   const [applyingFilter, setApplyingFilter] = useState(false);
   const [batchItems, setBatchItems] = useState<BatchItemStatus[] | null>(null);
 
-  const [panels, setPanels] = useState<PanelState[]>([newPanel(1)]);
   const nextPanelId = useRef(2);
+  const nextSeriesId = useRef(2);
+  const [panels, setPanels] = useState<PanelState[]>([
+    { id: 1, series: [{ seriesId: 1, datasetId: null, channel: 0, source: 'raw' }], viewport: null },
+  ]);
   const [previews, setPreviews] = useState<Record<number, PreviewResponse | null>>({});
   const [previewLoading, setPreviewLoading] = useState<Record<number, boolean>>({});
-  const [panelImporting, setPanelImporting] = useState<Record<number, boolean>>({});
-  const [saving, setSaving] = useState<Record<number, boolean>>({});
+  const [seriesImporting, setSeriesImporting] = useState<Record<number, boolean>>({});
+  const [savingSeries, setSavingSeries] = useState<Record<number, boolean>>({});
 
   const [flagsActive, setFlagsActive] = useState(false);
   const [flags, setFlags] = useState<Record<string, number[]>>({});
@@ -60,7 +59,7 @@ function App() {
       .catch((e) => setError(String(e)));
   }, []);
 
-  // --- Carga / filtro ---
+  // --- Carga / filtro (a nivel de dataset, independiente de cuántas series lo usen) ---
 
   async function markFiltering(id: string, filtering: boolean): Promise<DatasetInfo> {
     const info = await importDataset(id);
@@ -135,23 +134,74 @@ function App() {
   // --- Paneles de vista ---
 
   function handleAddView() {
-    setPanels((prev) => [...prev, newPanel(nextPanelId.current++)]);
+    setPanels((prev) => [
+      ...prev,
+      { id: nextPanelId.current++, series: [{ seriesId: nextSeriesId.current++, datasetId: null, channel: 0, source: 'raw' }], viewport: null },
+    ]);
   }
 
-  function handleRemoveView(panelId: number) {
-    setPanels((prev) => prev.filter((p) => p.id !== panelId));
+  function cleanupSeriesState(seriesId: number) {
     setPreviews((prev) => {
       const next = { ...prev };
-      delete next[panelId];
+      delete next[seriesId];
+      return next;
+    });
+    setPreviewLoading((prev) => {
+      const next = { ...prev };
+      delete next[seriesId];
+      return next;
+    });
+    setSeriesImporting((prev) => {
+      const next = { ...prev };
+      delete next[seriesId];
+      return next;
+    });
+    setSavingSeries((prev) => {
+      const next = { ...prev };
+      delete next[seriesId];
       return next;
     });
   }
 
-  async function handlePanelSelectDataset(panelId: number, datasetId: string) {
+  function handleRemoveView(panelId: number) {
+    const panel = panels.find((p) => p.id === panelId);
+    panel?.series.forEach((s) => cleanupSeriesState(s.seriesId));
+    setPanels((prev) => prev.filter((p) => p.id !== panelId));
+  }
+
+  // --- Series dentro de una vista (superponer señales) ---
+
+  function handleAddSeries(panelId: number) {
     setPanels((prev) =>
-      prev.map((p) => (p.id === panelId ? { ...p, datasetId, channel: 0, source: 'raw', viewport: null } : p)),
+      prev.map((p) =>
+        p.id === panelId
+          ? { ...p, series: [...p.series, { seriesId: nextSeriesId.current++, datasetId: null, channel: 0, source: 'raw' as const }] }
+          : p,
+      ),
     );
-    setPanelImporting((prev) => ({ ...prev, [panelId]: true }));
+  }
+
+  function handleRemoveSeries(panelId: number, seriesId: number) {
+    setPanels((prev) =>
+      prev.map((p) => (p.id === panelId ? { ...p, series: p.series.filter((s) => s.seriesId !== seriesId) } : p)),
+    );
+    cleanupSeriesState(seriesId);
+  }
+
+  async function handleSeriesSelectDataset(panelId: number, seriesId: number, datasetId: string) {
+    setPanels((prev) =>
+      prev.map((p) =>
+        p.id === panelId
+          ? {
+              ...p,
+              series: p.series.map((s) =>
+                s.seriesId === seriesId ? { ...s, datasetId, channel: 0, source: 'raw' as const } : s,
+              ),
+            }
+          : p,
+      ),
+    );
+    setSeriesImporting((prev) => ({ ...prev, [seriesId]: true }));
     setError(null);
     try {
       if (!loaded[datasetId]) {
@@ -161,73 +211,92 @@ function App() {
     } catch (e) {
       setError(String(e));
     } finally {
-      setPanelImporting((prev) => ({ ...prev, [panelId]: false }));
+      setSeriesImporting((prev) => ({ ...prev, [seriesId]: false }));
     }
   }
 
-  function handlePanelSelectChannel(panelId: number, channel: number) {
-    setPanels((prev) => prev.map((p) => (p.id === panelId ? { ...p, channel } : p)));
+  function handleSeriesSelectChannel(panelId: number, seriesId: number, channel: number) {
+    setPanels((prev) =>
+      prev.map((p) =>
+        p.id === panelId ? { ...p, series: p.series.map((s) => (s.seriesId === seriesId ? { ...s, channel } : s)) } : p,
+      ),
+    );
   }
 
-  function handlePanelSelectSource(panelId: number, source: 'raw' | 'filtered') {
-    setPanels((prev) => prev.map((p) => (p.id === panelId ? { ...p, source } : p)));
+  function handleSeriesSelectSource(panelId: number, seriesId: number, source: 'raw' | 'filtered') {
+    setPanels((prev) =>
+      prev.map((p) =>
+        p.id === panelId ? { ...p, series: p.series.map((s) => (s.seriesId === seriesId ? { ...s, source } : s)) } : p,
+      ),
+    );
   }
 
-  async function handleSavePanel(panel: PanelState) {
-    if (!panel.datasetId) return;
-    const ld = loaded[panel.datasetId];
+  async function handleSaveSeries(panelId: number, seriesId: number) {
+    const panel = panels.find((p) => p.id === panelId);
+    const s = panel?.series.find((x) => x.seriesId === seriesId);
+    if (!s || !s.datasetId) return;
+    const ld = loaded[s.datasetId];
     if (!ld) return;
-    setSaving((prev) => ({ ...prev, [panel.id]: true }));
+    setSavingSeries((prev) => ({ ...prev, [seriesId]: true }));
     setError(null);
     try {
       await saveSignal({
-        datasetId: panel.datasetId,
-        source: panel.source,
-        filterId: panel.source === 'filtered' ? ld.filterId ?? undefined : undefined,
+        datasetId: s.datasetId,
+        source: s.source,
+        filterId: s.source === 'filtered' ? ld.filterId ?? undefined : undefined,
       });
     } catch (e) {
       setError(String(e));
     } finally {
-      setSaving((prev) => ({ ...prev, [panel.id]: false }));
+      setSavingSeries((prev) => ({ ...prev, [seriesId]: false }));
     }
   }
 
-  // Refresca el preview de cada panel cuando cambian sus selecciones, los
-  // datasets cargados (p.ej. al terminar un filtro) o su propio viewport
-  // (independiente por vista, ver docs/architecture.md sobre no repetir el
-  // bug de un viewport compartido excediendo la duración de otro dataset).
+  // --- Rango de tiempo / duración de referencia por vista ---
+
+  function panelReferenceDuration(panel: PanelState): number {
+    const durations = panel.series
+      .map((s) => (s.datasetId ? loaded[s.datasetId]?.info.duration_seconds : undefined))
+      .filter((d): d is number => !!d && d > 0);
+    return durations.length ? Math.max(...durations) : 60;
+  }
+
+  function panelTimeRange(panel: PanelState): Viewport {
+    return panel.viewport ?? { start: 0, end: panelReferenceDuration(panel) };
+  }
+
+  // Refresca el preview de cada serie de cada panel cuando cambian sus
+  // selecciones, los datasets cargados, o el viewport del panel.
   useEffect(() => {
     panels.forEach((panel) => {
-      if (!panel.datasetId) return;
-      const ld = loaded[panel.datasetId];
-      if (!ld) return;
-      if (panel.source === 'filtered' && !ld.filterId) return;
+      const range = panelTimeRange(panel);
+      panel.series.forEach((s) => {
+        if (!s.datasetId) return;
+        const ld = loaded[s.datasetId];
+        if (!ld) return;
+        if (s.source === 'filtered' && !ld.filterId) return;
 
-      setPreviewLoading((prev) => ({ ...prev, [panel.id]: true }));
-      const start = panel.viewport ? panel.viewport.start * ld.info.sampling_rate_hz : undefined;
-      const end = panel.viewport ? panel.viewport.end * ld.info.sampling_rate_hz : undefined;
+        setPreviewLoading((prev) => ({ ...prev, [s.seriesId]: true }));
+        const start = range.start * ld.info.sampling_rate_hz;
+        const end = range.end * ld.info.sampling_rate_hz;
 
-      getPreview({
-        id: panel.source === 'raw' ? panel.datasetId : undefined,
-        filterId: panel.source === 'filtered' ? ld.filterId ?? undefined : undefined,
-        channel: panel.channel,
-        maxPoints: PREVIEW_POINTS,
-        start,
-        end,
-      })
-        .then((p) => setPreviews((prev) => ({ ...prev, [panel.id]: p })))
-        .catch((e) => setError(String(e)))
-        .finally(() => setPreviewLoading((prev) => ({ ...prev, [panel.id]: false })));
+        getPreview({
+          id: s.source === 'raw' ? s.datasetId : undefined,
+          filterId: s.source === 'filtered' ? ld.filterId ?? undefined : undefined,
+          channel: s.channel,
+          maxPoints: PREVIEW_POINTS,
+          start,
+          end,
+        })
+          .then((p) => setPreviews((prev) => ({ ...prev, [s.seriesId]: p })))
+          .catch((e) => setError(String(e)))
+          .finally(() => setPreviewLoading((prev) => ({ ...prev, [s.seriesId]: false })));
+      });
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [panels, loaded]);
 
-  // --- Zoom / pan / home (independiente por vista) ---
-
-  function panelReferenceDuration(panel: PanelState): number {
-    if (!panel.datasetId) return 60;
-    return loaded[panel.datasetId]?.info.duration_seconds || 60;
-  }
+  // --- Zoom / pan / home / rueda (independiente por vista) ---
 
   function updatePanelViewport(panelId: number, compute: (panel: PanelState) => PanelState['viewport']) {
     setPanels((prev) => prev.map((p) => (p.id === panelId ? { ...p, viewport: compute(p) } : p)));
@@ -288,10 +357,6 @@ function App() {
     });
   }
 
-  // Avanzar/retroceder con la rueda del mouse. A diferencia de los botones
-  // de pan (deshabilitados sin zoom previo), la rueda funciona de inmediato:
-  // si todavía no hay viewport, arranca con una ventana reducida en vez de
-  // no hacer nada.
   function handlePanelWheelPan(panelId: number, direction: 1 | -1) {
     updatePanelViewport(panelId, (p) => {
       const ref = panelReferenceDuration(p);
@@ -312,10 +377,45 @@ function App() {
     });
   }
 
-  // --- Flags ---
+  // --- Flags (por dataset; una vista con series de varios datasets marca el
+  // mismo instante en todos los datasets que muestra) ---
 
-  function handleFlagClick(datasetId: string, sample: number) {
-    setFlags((prev) => ({ ...prev, [datasetId]: [...(prev[datasetId] ?? []), sample] }));
+  function panelDatasetIds(panel: PanelState): string[] {
+    return Array.from(new Set(panel.series.map((s) => s.datasetId).filter((id): id is string => !!id)));
+  }
+
+  function panelFlagTimes(panel: PanelState): number[] {
+    const times: number[] = [];
+    for (const id of panelDatasetIds(panel)) {
+      const srate = loaded[id]?.info.sampling_rate_hz;
+      if (!srate) continue;
+      for (const sample of flags[id] ?? []) times.push(sample / srate);
+    }
+    return times;
+  }
+
+  function handlePanelFlagClick(panelId: number, timeSeconds: number) {
+    const panel = panels.find((p) => p.id === panelId);
+    if (!panel) return;
+    for (const datasetId of panelDatasetIds(panel)) {
+      const srate = loaded[datasetId]?.info.sampling_rate_hz;
+      if (!srate) continue;
+      const sample = Math.round(timeSeconds * srate);
+      setFlags((prev) => ({ ...prev, [datasetId]: [...(prev[datasetId] ?? []), sample] }));
+    }
+  }
+
+  function handlePanelFlagRemove(panelId: number, timeSeconds: number) {
+    const panel = panels.find((p) => p.id === panelId);
+    if (!panel) return;
+    for (const datasetId of panelDatasetIds(panel)) {
+      const srate = loaded[datasetId]?.info.sampling_rate_hz;
+      if (!srate) continue;
+      setFlags((prev) => ({
+        ...prev,
+        [datasetId]: (prev[datasetId] ?? []).filter((s) => Math.abs(s / srate - timeSeconds) > 1e-3),
+      }));
+    }
   }
 
   function handleFlagRemove(datasetId: string, sample: number) {
@@ -375,21 +475,23 @@ function App() {
                 panel={panel}
                 datasets={datasets}
                 loaded={loaded}
-                preview={previews[panel.id] ?? null}
-                loadingPreview={!!previewLoading[panel.id]}
-                loadingImport={!!panelImporting[panel.id]}
-                onSelectDataset={(id) => handlePanelSelectDataset(panel.id, id)}
-                onSelectChannel={(ch) => handlePanelSelectChannel(panel.id, ch)}
-                onSelectSource={(src) => handlePanelSelectSource(panel.id, src)}
+                previews={previews}
+                previewLoading={previewLoading}
+                seriesImporting={seriesImporting}
+                timeRange={panelTimeRange(panel)}
+                onSelectDataset={(seriesId, id) => handleSeriesSelectDataset(panel.id, seriesId, id)}
+                onSelectChannel={(seriesId, ch) => handleSeriesSelectChannel(panel.id, seriesId, ch)}
+                onSelectSource={(seriesId, src) => handleSeriesSelectSource(panel.id, seriesId, src)}
+                onAddSeries={() => handleAddSeries(panel.id)}
+                onRemoveSeries={(seriesId) => handleRemoveSeries(panel.id, seriesId)}
+                onSaveSeries={(seriesId) => handleSaveSeries(panel.id, seriesId)}
+                savingSeries={savingSeries}
                 onRemove={() => handleRemoveView(panel.id)}
-                onSave={() => handleSavePanel(panel)}
-                saving={!!saving[panel.id]}
                 canRemove={panels.length > 1}
-                colorVar={panel.source === 'raw' ? '--series-1' : '--series-2'}
-                flags={panel.datasetId ? flags[panel.datasetId] ?? [] : []}
+                flagTimes={panelFlagTimes(panel)}
                 flagsActive={flagsActive}
-                onFlagClick={(sample) => panel.datasetId && handleFlagClick(panel.datasetId, sample)}
-                onFlagRemove={(sample) => panel.datasetId && handleFlagRemove(panel.datasetId, sample)}
+                onFlagClick={(t) => handlePanelFlagClick(panel.id, t)}
+                onFlagRemove={(t) => handlePanelFlagRemove(panel.id, t)}
                 onZoomSelect={(s, e) => handlePanelZoomSelect(panel.id, s, e)}
                 onWheelPan={(direction) => handlePanelWheelPan(panel.id, direction)}
                 onZoomIn={() => handlePanelZoomIn(panel.id)}

@@ -1,5 +1,5 @@
 import type { DatasetEntry, DatasetInfo, PreviewResponse } from '../api';
-import { WaveformPanel } from './WaveformPanel';
+import { WaveformPanel, type SeriesDisplay, type TimeRange } from './WaveformPanel';
 
 export interface LoadedDataset {
   info: DatasetInfo;
@@ -12,33 +12,64 @@ export interface Viewport {
   end: number;
 }
 
-export interface PanelState {
-  id: number;
+export interface SeriesRef {
+  seriesId: number;
   datasetId: string | null;
   channel: number;
   source: 'raw' | 'filtered';
+}
+
+export interface PanelState {
+  id: number;
+  series: SeriesRef[]; // al menos 1 -- superponer agrega más
   viewport: Viewport | null; // independiente por vista
+}
+
+const SERIES_COLOR_VARS = [
+  '--series-1',
+  '--series-2',
+  '--series-3',
+  '--series-4',
+  '--series-5',
+  '--series-6',
+  '--series-7',
+  '--series-8',
+];
+
+function colorVarForIndex(i: number): string {
+  return SERIES_COLOR_VARS[i % SERIES_COLOR_VARS.length];
+}
+
+function seriesLabel(s: SeriesRef, loaded: Record<string, LoadedDataset>): string {
+  if (!s.datasetId) return '—';
+  const ld = loaded[s.datasetId];
+  const subject = ld?.info.subject_id || s.datasetId.split('/').pop();
+  const channelLabel = ld?.info.channel_labels[s.channel] ?? s.channel;
+  const sourceLabel = s.source === 'raw' ? 'original' : 'filtrada';
+  return `${subject} · ${channelLabel} (${sourceLabel})`;
 }
 
 interface Props {
   panel: PanelState;
   datasets: DatasetEntry[];
   loaded: Record<string, LoadedDataset>;
-  preview: PreviewResponse | null;
-  loadingPreview: boolean;
-  loadingImport: boolean;
-  onSelectDataset: (datasetId: string) => void;
-  onSelectChannel: (channel: number) => void;
-  onSelectSource: (source: 'raw' | 'filtered') => void;
+  previews: Record<number, PreviewResponse | null>; // por seriesId
+  previewLoading: Record<number, boolean>;
+  seriesImporting: Record<number, boolean>;
+  timeRange: TimeRange;
+  onSelectDataset: (seriesId: number, datasetId: string) => void;
+  onSelectChannel: (seriesId: number, channel: number) => void;
+  onSelectSource: (seriesId: number, source: 'raw' | 'filtered') => void;
+  onAddSeries: () => void;
+  onRemoveSeries: (seriesId: number) => void;
+  onSaveSeries: (seriesId: number) => void;
+  savingSeries: Record<number, boolean>;
   onRemove: () => void;
-  onSave: () => void;
-  saving: boolean;
   canRemove: boolean;
-  colorVar: string;
-  flags: number[];
+  flagTimes: number[];
   flagsActive: boolean;
-  onFlagClick: (sample: number) => void;
-  onFlagRemove: (sample: number) => void;
+  onFlagClick: (timeSeconds: number) => void;
+  onFlagRemove: (timeSeconds: number) => void;
   onZoomSelect: (startSeconds: number, endSeconds: number) => void;
   onWheelPan: (direction: 1 | -1) => void;
   onZoomIn: () => void;
@@ -52,18 +83,20 @@ export function ViewPanel({
   panel,
   datasets,
   loaded,
-  preview,
-  loadingPreview,
-  loadingImport,
+  previews,
+  previewLoading,
+  seriesImporting,
+  timeRange,
   onSelectDataset,
   onSelectChannel,
   onSelectSource,
+  onAddSeries,
+  onRemoveSeries,
+  onSaveSeries,
+  savingSeries,
   onRemove,
-  onSave,
-  saving,
   canRemove,
-  colorVar,
-  flags,
+  flagTimes,
   flagsActive,
   onFlagClick,
   onFlagRemove,
@@ -75,73 +108,98 @@ export function ViewPanel({
   onPanRight,
   onHome,
 }: Props) {
-  const current = panel.datasetId ? loaded[panel.datasetId] : undefined;
   const hasViewport = panel.viewport !== null;
+  const anyLoaded = panel.series.some((s) => s.datasetId);
+  const anyLoading = panel.series.some((s) => previewLoading[s.seriesId] || seriesImporting[s.seriesId]);
+
+  const displaySeries: SeriesDisplay[] = panel.series
+    .filter((s) => s.datasetId && (s.source === 'raw' || loaded[s.datasetId]?.filterId))
+    .map((s, i) => ({
+      key: String(s.seriesId),
+      label: seriesLabel(s, loaded),
+      colorVar: colorVarForIndex(i),
+      preview: previews[s.seriesId] ?? null,
+    }));
 
   return (
     <div className="view-panel">
-      <div className="view-panel-controls">
-        <select
-          className="select"
-          value={panel.datasetId ?? ''}
-          onChange={(e) => onSelectDataset(e.target.value)}
-        >
-          <option value="" disabled>
-            Elegir dataset…
-          </option>
-          {datasets.map((d) => (
-            <option key={d.id} value={d.id}>
-              {d.name}
-            </option>
-          ))}
-        </select>
-
-        {current && (
-          <select
-            className="select"
-            value={panel.channel}
-            onChange={(e) => onSelectChannel(Number(e.target.value))}
-          >
-            {current.info.channel_labels.map((label, idx) => (
-              <option key={idx} value={idx}>
-                {idx}. {label}
+      {panel.series.map((s, idx) => {
+        const current = s.datasetId ? loaded[s.datasetId] : undefined;
+        return (
+          <div className="series-row" key={s.seriesId}>
+            <span className="series-swatch" style={{ background: `var(${colorVarForIndex(idx)})` }} />
+            <select className="select" value={s.datasetId ?? ''} onChange={(e) => onSelectDataset(s.seriesId, e.target.value)}>
+              <option value="" disabled>
+                Elegir dataset…
               </option>
-            ))}
-          </select>
-        )}
+              {datasets.map((d) => (
+                <option key={d.id} value={d.id}>
+                  {d.name}
+                </option>
+              ))}
+            </select>
 
-        {current && (
-          <div className="segmented">
-            <button
-              className={panel.source === 'raw' ? 'active' : ''}
-              onClick={() => onSelectSource('raw')}
-            >
-              Original
-            </button>
-            <button
-              className={panel.source === 'filtered' ? 'active' : ''}
-              onClick={() => onSelectSource('filtered')}
-              disabled={!current.filterId && !current.filtering}
-            >
-              {current.filtering ? 'Filtrando…' : 'Filtrado'}
-            </button>
+            {current && (
+              <select
+                className="select"
+                value={s.channel}
+                onChange={(e) => onSelectChannel(s.seriesId, Number(e.target.value))}
+              >
+                {current.info.channel_labels.map((label, chIdx) => (
+                  <option key={chIdx} value={chIdx}>
+                    {chIdx}. {label}
+                  </option>
+                ))}
+              </select>
+            )}
+
+            {current && (
+              <div className="segmented">
+                <button className={s.source === 'raw' ? 'active' : ''} onClick={() => onSelectSource(s.seriesId, 'raw')}>
+                  Original
+                </button>
+                <button
+                  className={s.source === 'filtered' ? 'active' : ''}
+                  onClick={() => onSelectSource(s.seriesId, 'filtered')}
+                  disabled={!current.filterId && !current.filtering}
+                >
+                  {current.filtering ? 'Filtrando…' : 'Filtrado'}
+                </button>
+              </div>
+            )}
+
+            {current && (
+              <button
+                className="button-icon"
+                onClick={() => onSaveSeries(s.seriesId)}
+                disabled={savingSeries[s.seriesId]}
+                title="Guardar esta señal"
+              >
+                {savingSeries[s.seriesId] ? '…' : '💾'}
+              </button>
+            )}
+
+            {panel.series.length > 1 && (
+              <button className="button-icon" onClick={() => onRemoveSeries(s.seriesId)} title="Quitar esta señal">
+                ×
+              </button>
+            )}
           </div>
-        )}
+        );
+      })}
 
-        {current && (
-          <button className="button-icon" onClick={onSave} disabled={saving} title="Guardar esta señal">
-            {saving ? 'Guardando…' : '💾 Guardar'}
-          </button>
-        )}
-
+      <div className="view-panel-controls">
+        <button className="button-icon" onClick={onAddSeries} title="Superponer otra señal en esta misma vista">
+          + Superponer señal
+        </button>
         {canRemove && (
           <button className="button-icon view-panel-remove" onClick={onRemove} title="Quitar esta vista">
-            ×
+            Quitar vista
           </button>
         )}
       </div>
 
-      {current && (
+      {anyLoaded && (
         <div className="view-panel-zoom">
           <button className="button-icon" onClick={onPanLeft} disabled={!hasViewport} title="Mover a la izquierda">
             ◀
@@ -161,15 +219,15 @@ export function ViewPanel({
         </div>
       )}
 
-      {!panel.datasetId ? (
+      {!anyLoaded ? (
         <div className="empty-state">Elige un dataset para esta vista.</div>
       ) : (
         <WaveformPanel
-          title={current?.info.subject_id || panel.datasetId}
-          colorVar={colorVar}
-          preview={preview}
-          loading={loadingPreview || loadingImport}
-          flags={flags}
+          title={displaySeries.length === 1 ? displaySeries[0].label : ''}
+          series={displaySeries}
+          timeRange={timeRange}
+          loading={anyLoading && displaySeries.every((s) => !s.preview)}
+          flagTimes={flagTimes}
           flagsActive={flagsActive}
           onFlagClick={onFlagClick}
           onFlagRemove={onFlagRemove}

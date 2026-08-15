@@ -112,6 +112,17 @@ Fixes tras uso real reportado por el usuario:
   blanco sin explicación (reproducido con curl antes del fix). El backend
   (`Preview.cpp`) también recorta `start_sample` ahora, no solo `end_sample`,
   como defensa adicional.
+- Navegar con la rueda del mouse (avanzar/retroceder en el tiempo), listener
+  nativo no pasivo + throttle de 60ms para no saturar la API.
+- Superponer señales: `ViewPanel.PanelState.series` pasó de un único
+  dataset/canal/fuente a una lista -- cada vista puede superponer varias
+  señales (mismo u otro dataset/canal, original o filtrada) en un mismo
+  gráfico. Eje X ahora es tiempo compartido (segundos), no muestras de una
+  serie particular -- necesario porque las series superpuestas pueden tener
+  distinta frecuencia de muestreo/duración. Colores por posición de la serie
+  (paleta categórica de 8, ver dataviz skill), no por original/filtrada.
+  Leyenda visible con 2+ series. Los flags de una vista marcan el mismo
+  instante en TODOS los datasets presentes en esa vista.
 
 Próximo paso: Fase 6/7 — pipeline engine con proveniencia encadenada, o
 batch processing con estado persistido/reanudación.
