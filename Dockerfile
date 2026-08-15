@@ -27,12 +27,17 @@ RUN mkdir -p build && cd build && \
     cmake -DCMAKE_BUILD_TYPE=Release ../backend && \
     make
 
-# Smoke test de core/ (modelo de datos + enlace con libmatio, ver ADR-001) y
-# round-trip sintético del importador .set/.fdt (ADR-002, sin datos externos,
-# ver backend/tests/): si fallan, el build se detiene aquí en vez de producir
-# una imagen rota. set_importer_real_test no corre aquí — necesita un dataset
-# real montado en runtime (ver ese archivo).
-RUN cd build && ./core_smoke_test && ./set_importer_fdt_roundtrip_test
+# Tests automáticos sin datos externos (ver backend/tests/): modelo de datos +
+# enlace con libmatio (ADR-001), round-trip sintético .set/.fdt (ADR-002),
+# filtro FIR contra tonos de frecuencia conocida, y concurrencia real del
+# ThreadPool (ADR-004). Si alguno falla, el build se detiene aquí en vez de
+# producir una imagen rota. set_importer_real_test y filter_real_test no
+# corren aquí — necesitan un dataset real montado en runtime (ver esos archivos).
+RUN cd build && \
+    ./core_smoke_test && \
+    ./set_importer_fdt_roundtrip_test && \
+    ./fir_filter_synthetic_test && \
+    ./threadpool_test
 
 # ------------------------------------------------------------
 # ETAPA 3: Imagen FINAL (solo lo necesario para ejecutar)

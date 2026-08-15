@@ -51,16 +51,24 @@ Confirmado empíricamente contra datos reales; ver addendum en
 `docs/adr/002-fdt-companion-files.md`.
 
 ## Estado (2026-08-14)
-Fase -1/0 y Fase 1 completadas (ver commits previos). Fase 2 completada:
-`backend/src/importers/SetImporter.{hpp,cpp}` importa `.set` reales a `SignalData`
-— srate, canales (chanlocs), eventos (type/latency/duration + campos extra),
-continuo/epocado, y ambas rutas de `data` (inline y `.fdt` externo). Validado
-contra 2 sujetos reales de OpenNeuro ds004504 (19 canales, 500 Hz, ~10 min cada
-uno) y con un round-trip sintético para la ruta `.fdt` que ningún sujeto de ese
-dataset ejercita (todos autocontenidos). `backend/src/main.cpp` sigue siendo el
-demo de eco HTTP/WS original, a reemplazar — no la base del `api/` final (ver
-`docs/architecture.md`). Próximo paso: Fase 3, processing engine headless
-(desacoplado del transporte, ver ADR-004) + primer algoritmo real (filtros).
+Fases -1/0, 1 y 2 completadas (ver commits previos: estructura+ADRs, modelo de
+datos interno, importador `.set`/`.fdt`). Fase 3 completada:
+- `backend/src/algorithms/FirFilter.{hpp,cpp}`: filtro FIR de fase lineal propio
+  (sinc + ventana Hamming; lowpass/highpass/bandpass por inversión/resta
+  espectral), con extensión por reflexión en los bordes (evita transitorios al
+  filtrar señales con offset DC). Validado con tonos sintéticos de frecuencia
+  conocida (medición espectral directa) y contra datos reales.
+- `backend/src/executor/ThreadPool.{hpp,cpp}`: pool de workers separado del
+  dominio de red (ADR-004), validado con test de correctitud y de concurrencia
+  real (4 tareas de 100ms en ~100ms con 4 workers).
+- `filter_real_test`: import + filtro corriendo en un worker del pool sobre un
+  sujeto real de OpenNeuro ds004504 — prueba end-to-end del núcleo científico
+  headless, sin `api/` ni frontend.
+
+`backend/src/main.cpp` sigue siendo el demo de eco HTTP/WS original, a
+reemplazar — no la base del `api/` final (ver `docs/architecture.md`). Próximo
+paso: Fase 4/6 — decidir si seguir con más algoritmos (rereferenciación) o
+empezar el pipeline engine con proveniencia que los encadene.
 
 ## Qué NO hacer sin decisión explícita
 - No añadir dependencias de terceros que resuelvan directamente algoritmos

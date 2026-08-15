@@ -12,6 +12,7 @@ endif()
 set(CMAKE_CXX_FLAGS_RELEASE "-O3")
 
 find_package(Boost 1.70 REQUIRED COMPONENTS system)
+find_package(Threads REQUIRED)
 
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(MATIO REQUIRED IMPORTED_TARGET matio)
@@ -34,6 +35,23 @@ add_library(importers STATIC
 target_include_directories(importers PUBLIC src)
 target_link_libraries(importers PUBLIC core PkgConfig::MATIO)
 
+# Primer algoritmo real (Fase 3, filtro FIR propio — ver docs/architecture.md
+# sobre no depender de librerías científicas de terceros). Función pura sobre
+# core/, sin red ni UI.
+add_library(algorithms STATIC
+    src/algorithms/FirFilter.cpp
+)
+target_include_directories(algorithms PUBLIC src)
+target_link_libraries(algorithms PUBLIC core)
+
+# Dominio de cómputo separado del dominio de red (ADR-004): no depende de
+# core/algorithms/importers, solo ejecuta callables.
+add_library(executor STATIC
+    src/executor/ThreadPool.cpp
+)
+target_include_directories(executor PUBLIC src)
+target_link_libraries(executor PUBLIC Threads::Threads)
+
 add_executable(backend src/main.cpp)
 target_link_libraries(backend ${Boost_LIBRARIES} core)
 
@@ -49,8 +67,19 @@ add_executable(set_importer_fdt_roundtrip_test tests/set_importer_fdt_roundtrip_
 target_link_libraries(set_importer_fdt_roundtrip_test importers)
 add_test(NAME set_importer_fdt_roundtrip_test COMMAND set_importer_fdt_roundtrip_test)
 
-# Herramienta manual de verificacion contra datos reales (ver el propio
-# archivo): no se registra con add_test porque requiere un dataset montado
+add_executable(fir_filter_synthetic_test tests/fir_filter_synthetic_test.cpp)
+target_link_libraries(fir_filter_synthetic_test algorithms)
+add_test(NAME fir_filter_synthetic_test COMMAND fir_filter_synthetic_test)
+
+add_executable(threadpool_test tests/threadpool_test.cpp)
+target_link_libraries(threadpool_test executor)
+add_test(NAME threadpool_test COMMAND threadpool_test)
+
+# Herramientas manuales de verificacion contra datos reales (ver cada
+# archivo): no se registran con add_test porque requieren un dataset montado
 # en runtime, no disponible durante el build de la imagen.
 add_executable(set_importer_real_test tests/set_importer_real_test.cpp)
 target_link_libraries(set_importer_real_test importers)
+
+add_executable(filter_real_test tests/filter_real_test.cpp)
+target_link_libraries(filter_real_test importers algorithms executor)

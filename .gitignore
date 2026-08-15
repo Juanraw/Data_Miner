@@ -20,3 +20,6 @@ data/logs/*
 .idea/
 .DS_Store
 Thumbs.db
+
+# Estado interno de la herramienta Claude Code (no es parte del proyecto)
+.claude/
